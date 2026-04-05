@@ -187,3 +187,24 @@ python examples/example_async.py
 ```
 
 Both cover: simple filters, AND / OR / NOT, combined nesting, child EXISTS filtering, pagination, `read_group` with domain / date granularity / child aggregation / HAVING, and `__domain` drill-down.
+
+Here is an improved, livelier version of your acknowledgement note, complete with emojis and the added context about the Specification pattern acting as the core inspiration for the library. It is formatted directly for your `README.md`.
+
+***
+
+## 🙌 Acknowledgements & Inspirations
+
+The creation of AxiomQuery was sparked by a desire to cleanly bridge pure domain logic with robust data access. The conceptual "trigger point" for this library came from **Martin Fowler and Eric Evans' Specification Pattern**—a brilliant blueprint for encapsulating business rules. However, it was the phenomenal foundation of **SQLAlchemy 2.0** that provided the mechanical reality, making it possible to seamlessly translate those decoupled domain specifications into highly optimized SQL. 
+
+A huge thank you to the maintainers and contributors of SQLAlchemy. AxiomQuery is built explicitly as a specification-based query and aggregation engine for SQLAlchemy 2.0 ORM models, and it relies entirely on several of their most powerful features:
+
+* 🔍 **Incredible Introspection (`inspect()`):** AxiomQuery automatically derives all necessary schema data—including `mapper.columns`, one-to-many relationships (`RelationshipDirection.ONETOMANY`), and foreign key synchronization pairs—directly from SQLAlchemy's introspection tools. This allows the engine to extract everything the compiler needs without ever forcing the developer to write duplicate descriptor code.
+* 🏗️ **Robust Expression Language:** Our underlying AST compiler relies heavily on SQLAlchemy's composable query constructs. Mapping our 11 supported operators to native methods makes it incredibly easy to safely compile complex SQL `WHERE` clauses. It seamlessly handles advanced requirements, such as utilizing `EXISTS` subqueries for parent-child filtering and executing `LEFT JOIN` aggregations with database-specific date truncations.
+* 🔌 **Decoupled Session Management:** Because SQLAlchemy cleanly separates the ORM models from the active database connection, AxiomQuery can operate as a thin, highly reusable facade. The library expects a caller-owned session (whether standard or an `AsyncSession`), allowing developers to easily manage transactions across multiple engines without friction.
+
+Thank you for providing the introspection and query-building tools that make translating dynamic JSON expressions into complex SQL queries a reality! ✨
+
+### 📚 References
+
+* **The Specification Pattern:** [Specifications by Martin Fowler & Eric Evans (PDF)](https://martinfowler.com/apsupp/spec.pdf) - The foundational paper that inspired the core domain-driven architecture of this library.
+* **SQLAlchemy 2.0:** [Official Documentation](https://docs.sqlalchemy.org/en/20/) - The robust ORM and toolkit that powers the AxiomQuery engine.

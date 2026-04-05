@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [0.1.1] — 2026-04-05
+Acknowledgement and Inspiration Added
+
+### Added
+- updated the README.md file with details
 
 ## [0.1.0] — 2026-03-29
 
