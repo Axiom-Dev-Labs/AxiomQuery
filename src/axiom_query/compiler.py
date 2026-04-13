@@ -94,22 +94,39 @@ def _make_table_resolver(schema: ModelSchema) -> SAResolver:
 
     def resolve(fp: str, op: Op, val: Any) -> ColumnElement:
         if "." in fp:
-            child_name, field_name = fp.split(".", 1)
+            rel_name, field_name = fp.split(".", 1)
             from axiom_query.errors import QueryError
 
-            child = schema.children.get(child_name)
-            if child is None:
-                raise QueryError(
-                    "INVALID_FILTER_FIELD",
-                    f"No child relation '{child_name}' on {schema.model_class.__name__}",
+            # O2M: FK is on the child table; use EXISTS over child rows
+            child = schema.children.get(rel_name)
+            if child is not None:
+                fk_col = child.table.c[child.fk_field]
+                field_col = child.table.c[field_name]
+                condition = _apply_operator(field_col, op, val)
+                return exists(
+                    select(1)
+                    .select_from(child.table)
+                    .where(and_(fk_col == schema.table.c.id, condition))
                 )
-            fk_col = child.table.c[child.fk_field]
-            field_col = child.table.c[field_name]
-            condition = _apply_operator(field_col, op, val)
-            return exists(
-                select(1)
-                .select_from(child.table)
-                .where(and_(fk_col == schema.table.c.id, condition))
+
+            # M2O: FK is on the current table; use EXISTS over the referenced table
+            related = schema.related.get(rel_name)
+            if related is not None:
+                local_fk_col = schema.table.c[related.fk_field]
+                ref_pk = next(iter(related.table.primary_key))
+                field_col = related.table.c[field_name]
+                condition = _apply_operator(field_col, op, val)
+                return exists(
+                    select(1)
+                    .select_from(related.table)
+                    .where(and_(ref_pk == local_fk_col, condition))
+                )
+
+            all_relations = list(schema.children.keys()) + list(schema.related.keys())
+            raise QueryError(
+                "INVALID_FILTER_FIELD",
+                f"No relation '{rel_name}' on {schema.model_class.__name__}. "
+                f"Available: {', '.join(all_relations) or 'none'}",
             )
         else:
             col = _resolve_column(schema, fp)

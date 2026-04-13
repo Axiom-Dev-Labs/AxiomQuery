@@ -1,6 +1,8 @@
-"""Tests for QueryEngine.list() — slices 1-5."""
+"""Tests for QueryEngine.list() — slices 1-5 + M2O filtering."""
 
 from __future__ import annotations
+
+import pytest
 
 from conftest import Order
 
@@ -51,3 +53,39 @@ def test_list_with_order_by(session, engine):
     records = engine.list(session, order_by=[["total", "desc"]])
     assert records[0].total == 200
     assert records[1].total == 100
+
+
+# Slice 6 — M2O field filtering (EXISTS on referenced table)
+def test_list_filters_by_m2o_field(session, engine):
+    # Order 1 → customer Alice; Order 2 → customer Bob; Order 3 → no customer
+    records = engine.list(session, domain=[["customer.name", "=", "Alice"]])
+    assert len(records) == 1
+    assert records[0].id == 1
+
+
+def test_list_m2o_ilike(session, engine):
+    records = engine.list(session, domain=[["customer.name", "ilike", "%ob%"]])
+    assert len(records) == 1
+    assert records[0].id == 2
+
+
+def test_list_m2o_no_match(session, engine):
+    records = engine.list(session, domain=[["customer.name", "=", "Nobody"]])
+    assert records == []
+
+
+def test_list_m2o_combined_with_scalar(session, engine):
+    # Alice's order is CONFIRMED → should match
+    records = engine.list(
+        session,
+        domain=[["customer.name", "=", "Alice"], ["status", "=", "CONFIRMED"]],
+    )
+    assert len(records) == 1
+    assert records[0].id == 1
+
+
+def test_list_m2o_unknown_relation_raises(session, engine):
+    from axiom_query.errors import QueryError
+
+    with pytest.raises(QueryError):
+        engine.list(session, domain=[["nonexistent.name", "=", "x"]])

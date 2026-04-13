@@ -6,7 +6,8 @@ Demonstrates all domain condition styles:
   - OR   — any condition must hold
   - NOT  — negation
   - Combined — nested AND / OR / NOT
-  - Child-field EXISTS filtering
+  - Child-field EXISTS filtering (O2M)
+  - Many-to-One field filtering (M2O EXISTS subquery)
   - list() options: limit, offset, order_by
   - read_group() with domain, date granularity, child aggregate, HAVING
   - __domain drill-down: group result → list of matching records
@@ -19,6 +20,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import List
+
+from typing import Optional
 
 from sqlalchemy import DateTime, ForeignKey, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
@@ -33,12 +36,25 @@ class Base(DeclarativeBase):
     pass
 
 
+class Customer(Base):
+    __tablename__ = "customers"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+
+    def __repr__(self) -> str:
+        return f"Customer(id={self.id}, name={self.name!r})"
+
+
 class Order(Base):
     __tablename__ = "orders"
     id: Mapped[int] = mapped_column(primary_key=True)
     status: Mapped[str] = mapped_column(String(20))
     total: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime)
+    customer_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("customers.id"), nullable=True
+    )
+    customer: Mapped[Optional["Customer"]] = relationship()
     lines: Mapped[List["OrderLine"]] = relationship(back_populates="order")
 
     def __repr__(self) -> str:
@@ -61,14 +77,41 @@ class OrderLine(Base):
 def seed(session: Session) -> None:
     session.add_all(
         [
+            Customer(id=1, name="Joy"),
+            Customer(id=2, name="Bob"),
+        ]
+    )
+    session.flush()
+    session.add_all(
+        [
             Order(
-                id=1, status="CONFIRMED", total=100, created_at=datetime(2026, 1, 15)
+                id=1,
+                status="CONFIRMED",
+                total=100,
+                created_at=datetime(2026, 1, 15),
+                customer_id=1,
             ),
             Order(
-                id=2, status="CONFIRMED", total=200, created_at=datetime(2026, 2, 20)
+                id=2,
+                status="CONFIRMED",
+                total=200,
+                created_at=datetime(2026, 2, 20),
+                customer_id=2,
             ),
-            Order(id=3, status="DRAFT", total=50, created_at=datetime(2026, 1, 25)),
-            Order(id=4, status="CANCELLED", total=75, created_at=datetime(2026, 3, 10)),
+            Order(
+                id=3,
+                status="DRAFT",
+                total=50,
+                created_at=datetime(2026, 1, 25),
+                customer_id=1,
+            ),
+            Order(
+                id=4,
+                status="CANCELLED",
+                total=75,
+                created_at=datetime(2026, 3, 10),
+                customer_id=None,
+            ),
         ]
     )
     session.flush()
@@ -296,9 +339,34 @@ def main() -> None:
             ),
         )
 
-        # ── Section 8: list() options ─────────────────────────────────────
+        # ── Section 8: M2O field — EXISTS on referenced table ────────────
 
-        section("8. list() — limit, offset, order_by")
+        section("8. M2O field filtering (EXISTS on referenced table)")
+
+        show(
+            "orders where customer.name = 'Joy'",
+            engine.list(session, domain=[["customer.name", "=", "Joy"]]),
+        )
+
+        show(
+            "orders where customer.name ilike '%ob%'",
+            engine.list(session, domain=[["customer.name", "ilike", "%ob%"]]),
+        )
+
+        show(
+            "CONFIRMED orders for Joy (M2O + scalar)",
+            engine.list(
+                session,
+                domain=[
+                    ["customer.name", "=", "Joy"],
+                    ["status", "=", "CONFIRMED"],
+                ],
+            ),
+        )
+
+        # ── Section 9: list() options ─────────────────────────────────────
+
+        section("9. list() — limit, offset, order_by")
 
         show(
             "top 2 by total desc",
@@ -312,7 +380,7 @@ def main() -> None:
 
         # ── Section 9: read_group — basic ─────────────────────────────────
 
-        section("9. read_group — basic groupby + count")
+        section("10. read_group — basic groupby + count")
 
         groups, total = engine.read_group(
             session,
@@ -324,7 +392,7 @@ def main() -> None:
 
         # ── Section 10: read_group with domain ───────────────────────────
 
-        section("10. read_group with domain filter")
+        section("11. read_group with domain filter")
 
         groups, total = engine.read_group(
             session,
@@ -336,7 +404,7 @@ def main() -> None:
 
         # ── Section 11: read_group — date granularity ─────────────────────
 
-        section("11. read_group — date granularity (month)")
+        section("12. read_group — date granularity (month)")
 
         groups, total = engine.read_group(
             session,
@@ -348,7 +416,7 @@ def main() -> None:
 
         # ── Section 12: read_group — child aggregate (LEFT JOIN) ──────────
 
-        section("12. read_group — child aggregate (LEFT JOIN)")
+        section("13. read_group — child aggregate (LEFT JOIN)")
 
         groups, total = engine.read_group(
             session,
@@ -359,7 +427,7 @@ def main() -> None:
 
         # ── Section 13: read_group — HAVING ──────────────────────────────
 
-        section("13. read_group — HAVING filter on aggregate")
+        section("14. read_group — HAVING filter on aggregate")
 
         groups, total = engine.read_group(
             session,
@@ -371,7 +439,7 @@ def main() -> None:
 
         # ── Section 14: __domain drill-down ──────────────────────────────
 
-        section("14. __domain drill-down — group → records")
+        section("15. __domain drill-down — group → records")
 
         groups, _ = engine.read_group(
             session,

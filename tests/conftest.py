@@ -16,12 +16,20 @@ class Base(DeclarativeBase):
     pass
 
 
+class Customer(Base):
+    __tablename__ = "customers"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+
+
 class Order(Base):
     __tablename__ = "orders"
     id: Mapped[int] = mapped_column(primary_key=True)
     status: Mapped[str] = mapped_column(String(20))
     total: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime)
+    customer_id: Mapped[Optional[int]] = mapped_column(ForeignKey("customers.id"), nullable=True)
+    customer: Mapped[Optional["Customer"]] = relationship()
     lines: Mapped[List["OrderLine"]] = relationship(back_populates="order")
 
 
@@ -47,23 +55,31 @@ def db_engine():
 def seeded_engine(db_engine):
     """Seed test data once per session."""
     with Session(db_engine) as sess:
+        c1 = Customer(id=1, name="Alice")
+        c2 = Customer(id=2, name="Bob")
+        sess.add_all([c1, c2])
+        sess.flush()
+
         o1 = Order(
             id=1,
             status="CONFIRMED",
             total=100,
             created_at=datetime(2026, 1, 15),
+            customer_id=1,
         )
         o2 = Order(
             id=2,
             status="CONFIRMED",
             total=200,
             created_at=datetime(2026, 2, 20),
+            customer_id=2,
         )
         o3 = Order(
             id=3,
             status="DRAFT",
             total=50,
             created_at=datetime(2026, 1, 25),
+            customer_id=None,
         )
         sess.add_all([o1, o2, o3])
         sess.flush()
@@ -108,9 +124,14 @@ async def seeded_async_engine(async_db_engine):
     from sqlalchemy.ext.asyncio import AsyncSession
 
     async with AsyncSession(async_db_engine) as sess:
-        o1 = Order(id=1, status="CONFIRMED", total=100, created_at=datetime(2026, 1, 15))
-        o2 = Order(id=2, status="CONFIRMED", total=200, created_at=datetime(2026, 2, 20))
-        o3 = Order(id=3, status="DRAFT", total=50, created_at=datetime(2026, 1, 25))
+        c1 = Customer(id=1, name="Alice")
+        c2 = Customer(id=2, name="Bob")
+        sess.add_all([c1, c2])
+        await sess.flush()
+
+        o1 = Order(id=1, status="CONFIRMED", total=100, created_at=datetime(2026, 1, 15), customer_id=1)
+        o2 = Order(id=2, status="CONFIRMED", total=200, created_at=datetime(2026, 2, 20), customer_id=2)
+        o3 = Order(id=3, status="DRAFT", total=50, created_at=datetime(2026, 1, 25), customer_id=None)
         sess.add_all([o1, o2, o3])
         await sess.flush()
 
