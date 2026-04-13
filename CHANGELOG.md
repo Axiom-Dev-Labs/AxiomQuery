@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+
+## [0.2.0] — 2026-04-13
+
+### Added
+
+- M2O (Many-to-One) relational field filtering via dot-notation (e.g. `["customer.name", "ilike", "%Alice%"]`)
+  - Generates an `EXISTS` subquery joining the referenced table on the local FK column
+  - Composes freely with scalar filters and O2M child filters in the same domain
+- `RelatedSchema` dataclass in `schema.py` to capture M2O relationship metadata (referenced table, local FK column, columns)
+- `related` field on `ModelSchema` mapping relationship attribute names to their `RelatedSchema`
+
+---
+
 ## [0.1.1] — 2026-04-05
 Acknowledgement and Inspiration Added
 

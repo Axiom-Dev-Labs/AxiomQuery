@@ -1,6 +1,6 @@
 [project]
 name = "AxiomQuery"
-version = "0.1.1"
+version = "0.2.0"
 description = "Specification-based query and aggregation engine for SQLAlchemy 2.0 ORM models"
 readme = "README.md"
 license = { file = "LICENSE" }
