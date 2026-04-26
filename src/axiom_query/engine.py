@@ -15,6 +15,9 @@ from axiom_query.parser import parse_domain
 from axiom_query.schema import ModelSchema, derive_schema
 
 
+DEFAULT_PREFETCH = 1000
+
+
 def _get_dialect_name(session) -> str:
     """Extract dialect name from a sync or async SQLAlchemy session."""
     # AsyncSession has a .bind attribute (AsyncEngine)
@@ -38,13 +41,35 @@ class QueryEngine:
     Usage::
 
         engine = QueryEngine(Order)
-        records = engine.list(session, domain=[["status", "=", "CONFIRMED"]])
+
+        # Materialised page
+        page = engine.list(session, domain=[["status", "=", "CONFIRMED"]], limit=20)
+
+        # Streaming iteration over every match (no len/indexing)
+        for order in engine.search(session, domain=[["status", "=", "CONFIRMED"]]):
+            process(order)
+
         groups, total = engine.read_group(session, groupby=["status"], aggregates=["__count"])
     """
 
     def __init__(self, model_class: type) -> None:
         self._model = model_class
         self._schema: ModelSchema = derive_schema(model_class)
+
+    # ── Statement builder ────────────────────────────────────────────────
+
+    def _build_stmt(self, domain, order_by, limit, offset):
+        stmt = select(self._model)
+        if domain is not None:
+            spec = parse_domain(domain)
+            stmt = stmt.where(compile_domain(spec, self._schema))
+        if order_by is not None:
+            stmt = self._apply_order_by(stmt, order_by)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        if offset is not None:
+            stmt = stmt.offset(offset)
+        return stmt
 
     # ── Sync API ─────────────────────────────────────────────────────────
 
@@ -56,24 +81,36 @@ class QueryEngine:
         offset: int | None = None,
         order_by: list | None = None,
     ) -> list:
-        """Return all records matching the optional domain filter."""
-        stmt = select(self._model)
+        """Return all records matching the optional domain filter as a list.
 
-        if domain is not None:
-            spec = parse_domain(domain)
-            where = compile_domain(spec, self._schema)
-            stmt = stmt.where(where)
+        Materialises the full result. Use ``search()`` for streaming over large
+        result sets.
+        """
+        stmt = self._build_stmt(domain, order_by, limit, offset)
+        return list(session.execute(stmt).scalars().all())
 
-        if order_by is not None:
-            stmt = self._apply_order_by(stmt, order_by)
+    def search(
+        self,
+        session: Session,
+        domain: Any = None,
+        order_by: list | None = None,
+    ):
+        """Stream records for batch processing.
 
-        if limit is not None:
-            stmt = stmt.limit(limit)
-        if offset is not None:
-            stmt = stmt.offset(offset)
+        Returns an iterator yielding ORM instances from a server-side cursor,
+        fetched in batches of ``DEFAULT_PREFETCH`` (1000) rows. Single-pass —
+        iterate once and don't store the iterator for re-use.
 
-        result = session.execute(stmt)
-        return list(result.scalars().all())
+        No ``limit`` / ``offset``: this method is for processing every matching
+        row. Use ``list()`` if you need pagination, ``len()``, or indexing.
+
+        Driver note: true streaming requires a database driver with server-side
+        cursor support (psycopg2, asyncpg). SQLite degrades to client-side
+        iteration but remains correct.
+        """
+        stmt = self._build_stmt(domain, order_by, limit=None, offset=None)
+        streaming_stmt = stmt.execution_options(yield_per=DEFAULT_PREFETCH)
+        return iter(session.scalars(streaming_stmt))
 
     def read_group(
         self,
@@ -128,24 +165,34 @@ class QueryEngine:
         offset: int | None = None,
         order_by: list | None = None,
     ) -> list:
-        """Async variant of list()."""
-        stmt = select(self._model)
-
-        if domain is not None:
-            spec = parse_domain(domain)
-            where = compile_domain(spec, self._schema)
-            stmt = stmt.where(where)
-
-        if order_by is not None:
-            stmt = self._apply_order_by(stmt, order_by)
-
-        if limit is not None:
-            stmt = stmt.limit(limit)
-        if offset is not None:
-            stmt = stmt.offset(offset)
-
+        """Async variant of ``list()`` — returns a materialised list."""
+        stmt = self._build_stmt(domain, order_by, limit, offset)
         result = await session.execute(stmt)
         return list(result.scalars().all())
+
+    async def asearch(
+        self,
+        session,
+        domain: Any = None,
+        order_by: list | None = None,
+    ):
+        """Async variant of ``search()`` — returns an async iterator.
+
+        Consume with ``async for``::
+
+            async for record in await engine.asearch(session, domain=...):
+                process(record)
+
+        Streams ORM instances in batches of ``DEFAULT_PREFETCH`` (1000) rows
+        from a server-side cursor. Single-pass; no ``limit`` / ``offset``.
+
+        Driver note: true streaming requires a server-side cursor capable
+        driver (asyncpg). aiosqlite iterates correctly but without driver-level
+        streaming.
+        """
+        stmt = self._build_stmt(domain, order_by, limit=None, offset=None)
+        streaming_stmt = stmt.execution_options(yield_per=DEFAULT_PREFETCH)
+        return await session.stream_scalars(streaming_stmt)
 
     async def aread_group(
         self,
