@@ -7,6 +7,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.0] — 2026-04-26
+
+### Added
+
+- `search()` / `asearch()` — streaming iteration over large result sets via SQLAlchemy server-side cursors with `yield_per=1000`
+  - Sync `search()` returns a Python iterator (consume with `for`); async `asearch()` returns an `AsyncScalarResult` (consume with `async for`)
+  - Single-pass; no `limit` / `offset` (use `list()` / `alist()` for paginated/materialised access)
+- `DEFAULT_PREFETCH = 1000` module-level constant in `engine.py`
+- Internal `_build_stmt()` helper consolidating the `select + where + order_by + limit + offset` block shared by `list` / `alist` / `search` / `asearch` / `read_group`
+
+### Changed
+
+- `list()` / `alist()` continue to return a materialised `list` — behaviour and signature unchanged from 0.2.0 callers' perspective
+
+---
+
 ## [0.2.0] — 2026-04-13
 
 ### Added
