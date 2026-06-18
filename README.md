@@ -188,9 +188,7 @@ python examples/example_async.py
 
 Both cover: simple filters, AND / OR / NOT, combined nesting, child EXISTS filtering, pagination, `read_group` with domain / date granularity / child aggregation / HAVING, and `__domain` drill-down.
 
-Here is an improved, livelier version of your acknowledgement note, complete with emojis and the added context about the Specification pattern acting as the core inspiration for the library. It is formatted directly for your `README.md`.
-
-***
+---
 
 ## 🙌 Acknowledgements & Inspirations
 
@@ -204,7 +202,22 @@ A huge thank you to the maintainers and contributors of SQLAlchemy. AxiomQuery i
 
 Thank you for providing the introspection and query-building tools that make translating dynamic JSON expressions into complex SQL queries a reality! ✨
 
+### 🧭 Inspired by Odoo Domains
+
+AxiomQuery's filter language borrows the ergonomics of **Odoo's ORM _domain_** — a list of `[field, operator, value]` criteria that read as data, with implicit `AND` between them — and the shape of its **`read_group`** grouped-aggregation API. We keep the parts that make Odoo domains pleasant and adapt the rest to plain SQLAlchemy 2.0.
+
+| Odoo | AxiomQuery |
+|------|-----------|
+| `[('state', '=', 'done')]` triple domain | `[["status", "=", "CONFIRMED"]]` |
+| Implicit `AND` between criteria | Implicit `AND` in a list |
+| Polish-prefix `'&'`, `'\|'`, `'!'` operators | Explicit `{"and" / "or" / "not": ...}` dicts |
+| Dot-notation related fields (`partner_id.country_id.name`) | Dot-notation relational paths (correlated `EXISTS`) |
+| `read_group(domain, fields, groupby)` | `read_group(groupby, aggregates, domain)` |
+
+**What differs:** AxiomQuery is a standalone engine over any SQLAlchemy model (no Odoo ORM), domains are JSON-serialisable, and boolean logic uses readable `and` / `or` / `not` dicts (or Python `&` / `|` / `~`) instead of prefix operators.
+
 ### 📚 References
 
 * **The Specification Pattern:** [Specifications by Martin Fowler & Eric Evans (PDF)](https://martinfowler.com/apsupp/spec.pdf) - The foundational paper that inspired the core domain-driven architecture of this library.
 * **SQLAlchemy 2.0:** [Official Documentation](https://docs.sqlalchemy.org/en/20/) - The robust ORM and toolkit that powers the AxiomQuery engine.
+* **Odoo ORM Domains:** [Search domains reference](https://www.odoo.com/documentation/latest/developer/reference/backend/orm.html#search-domains) - The ergonomic inspiration for AxiomQuery's domain language and `read_group` API.
