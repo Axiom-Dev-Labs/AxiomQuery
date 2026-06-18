@@ -6,6 +6,7 @@ return shape. Pass an `AsyncSession` instead of a `Session`.
 | Sync | Async |
 |------|-------|
 | `list` | `alist` |
+| `count` | `acount` |
 | `search` | `asearch` |
 | `read_group` | `aread_group` |
 
@@ -38,6 +39,9 @@ engine = QueryEngine(Order)
 async with AsyncSession(db) as session:
     # filtered records
     records = await engine.alist(session, domain=[["status", "=", "CONFIRMED"]])
+
+    # how many match — no rows fetched
+    n = await engine.acount(session, domain=[["status", "=", "CONFIRMED"]])
 
     # grouped aggregation
     groups, total = await engine.aread_group(

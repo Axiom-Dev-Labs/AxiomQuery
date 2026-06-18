@@ -7,6 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- `count()` / `acount()` — return the number of records matching a domain via `SELECT COUNT(*)`, without fetching any rows
+  - Supports the full domain language (AND/OR/NOT, M2O/O2M, N-level relational dot-paths) by reusing the existing domain-compilation pipeline
+  - Relational filters compile to correlated `EXISTS` subqueries (not JOINs), so the count is exact — no `DISTINCT` needed
+  - Ignores `limit` / `offset` / `order_by`: it is the total number of matches
+- Internal `_build_count_stmt()` helper consolidating the count statement construction
+
+---
+
 ## [0.3.0] — 2026-04-26
 
 ### Added

@@ -28,9 +28,11 @@ All query methods take a caller-owned session as the first argument.
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `list(session, domain=None, limit=None, offset=None, order_by=None)` | `list` | Materialised records matching the domain. |
+| `count(session, domain=None)` | `int` | Number of records matching the domain via `SELECT COUNT(*)` — no rows fetched. Ignores `limit`/`offset`/`order_by`. |
 | `search(session, domain=None, order_by=None)` | iterator | Streams every matching record (server-side cursor, batches of 1000). No `limit`/`offset`. |
 | `read_group(session, groupby, aggregates, domain=None, having=None, order_by=None, limit=None, offset=None)` | `tuple[list[dict], int]` | Grouped aggregation; each group dict carries a `__domain`. |
 | `alist(...)` | `list` | Async `list`. |
+| `acount(...)` | `int` | Async `count`. |
 | `asearch(...)` | async iterator | Async `search`; consume with `async for`. |
 | `aread_group(...)` | `tuple[list[dict], int]` | Async `read_group`. |
 

@@ -97,6 +97,13 @@ The `domain` argument is the heart of AxiomQuery — a filter expressed as plain
 example above reads as "status equals CONFIRMED". Pass `domain=None` (or omit it) to return
 all records.
 
+To find out *how many* records match a domain without fetching them, use `count()` — it
+issues a `SELECT COUNT(*)` and returns an `int`:
+
+```python
+    n = engine.count(session, domain=[["status", "=", "CONFIRMED"]])
+```
+
 ## Next steps
 
 - [Domain Filter Syntax](guide/domain-syntax.md) — every operator and composition form.

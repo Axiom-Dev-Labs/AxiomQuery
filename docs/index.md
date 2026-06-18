@@ -26,6 +26,8 @@ with Session(db) as session:
   depth (`customer.city.country.name`).
 - **Grouped aggregation** — an Odoo-style [`read_group`](guide/aggregation.md) with date
   bucketing, child aggregates, `HAVING`, and per-group `__domain` drill-down.
+- **Counting** — `count` returns how many records match a domain via `SELECT COUNT(*)`,
+  without fetching any rows.
 - **Streaming** — [`search`](guide/streaming-search.md) iterates large result sets with a
   server-side cursor.
 - **Sync + async** — every method has an `a`-prefixed async twin.
@@ -50,6 +52,9 @@ engine = QueryEngine(Order)   # inspect() once — no DB connection at construct
 with Session(db) as session:
     # filtered records
     records = engine.list(session, domain=[["status", "=", "CONFIRMED"]])
+
+    # how many match — no rows fetched
+    n = engine.count(session, domain=[["status", "=", "CONFIRMED"]])
 
     # grouped aggregation
     groups, total = engine.read_group(
