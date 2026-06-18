@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from axiom_query.aggregation import Pagination, ReadGroupQuery
@@ -49,6 +49,9 @@ class QueryEngine:
         for order in engine.search(session, domain=[["status", "=", "CONFIRMED"]]):
             process(order)
 
+        # Total number of matches (SELECT COUNT(*), no rows transferred)
+        n = engine.count(session, domain=[["status", "=", "CONFIRMED"]])
+
         groups, total = engine.read_group(session, groupby=["status"], aggregates=["__count"])
     """
 
@@ -69,6 +72,13 @@ class QueryEngine:
             stmt = stmt.limit(limit)
         if offset is not None:
             stmt = stmt.offset(offset)
+        return stmt
+
+    def _build_count_stmt(self, domain):
+        stmt = select(func.count()).select_from(self._model)
+        if domain is not None:
+            spec = parse_domain(domain)
+            stmt = stmt.where(compile_domain(spec, self._schema))
         return stmt
 
     # ── Sync API ─────────────────────────────────────────────────────────
@@ -111,6 +121,18 @@ class QueryEngine:
         stmt = self._build_stmt(domain, order_by, limit=None, offset=None)
         streaming_stmt = stmt.execution_options(yield_per=DEFAULT_PREFETCH)
         return iter(session.scalars(streaming_stmt))
+
+    def count(self, session: Session, domain: Any = None) -> int:
+        """Return the number of records matching the optional domain filter.
+
+        Issues a ``SELECT COUNT(*)`` — the count is computed in the database and
+        no rows are transferred. Supports the same domain expressions as
+        ``list()`` / ``search()``, including relational dot-paths. Ignores
+        ``limit`` / ``offset`` / ``order_by``: this is the total number of
+        matches, not a page size.
+        """
+        stmt = self._build_count_stmt(domain)
+        return session.execute(stmt).scalar_one()
 
     def read_group(
         self,
@@ -193,6 +215,12 @@ class QueryEngine:
         stmt = self._build_stmt(domain, order_by, limit=None, offset=None)
         streaming_stmt = stmt.execution_options(yield_per=DEFAULT_PREFETCH)
         return await session.stream_scalars(streaming_stmt)
+
+    async def acount(self, session, domain: Any = None) -> int:
+        """Async variant of ``count()``."""
+        stmt = self._build_count_stmt(domain)
+        result = await session.execute(stmt)
+        return result.scalar_one()
 
     async def aread_group(
         self,

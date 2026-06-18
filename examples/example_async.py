@@ -7,6 +7,7 @@ methods.  Demonstrates the same domain styles:
   - Combined nested conditions
   - Child-field EXISTS filtering (O2M)
   - Many-to-One field filtering (M2O EXISTS subquery)
+  - acount() — total matches for a domain (SELECT COUNT(*), no rows fetched)
   - alist() options: limit, offset, order_by
   - aread_group() with domain, date granularity, child aggregate, HAVING
   - __domain drill-down with alist()
@@ -216,6 +217,24 @@ async def main() -> None:
 
         section("1. alist() — no domain (all records)")
         show("all orders", await engine.alist(session))
+
+        # ── Section 1b: acount() — number of matches, no rows fetched ─────
+
+        section("1b. acount() — total matches for a domain (SELECT COUNT(*))")
+
+        print(f"\n  total orders: {await engine.acount(session)}")
+        print(
+            "  CONFIRMED orders: "
+            f"{await engine.acount(session, domain=[['status', '=', 'CONFIRMED']])}"
+        )
+        print(
+            "  orders with a line quantity > 2: "
+            f"{await engine.acount(session, domain=[['lines.quantity', '>', 2]])}"
+        )
+        print(
+            "  orders where customer.city.country.name ilike '%Ind%': "
+            f"{await engine.acount(session, domain=[['customer.city.country.name', 'ilike', '%Ind%']])}"
+        )
 
         # ── Section 2: Simple conditions ─────────────────────────────────
 

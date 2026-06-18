@@ -8,6 +8,7 @@ Demonstrates all domain condition styles:
   - Combined — nested AND / OR / NOT
   - Child-field EXISTS filtering (O2M)
   - Many-to-One field filtering (M2O EXISTS subquery)
+  - count() — total matches for a domain (SELECT COUNT(*), no rows fetched)
   - list() options: limit, offset, order_by
   - read_group() with domain, date granularity, child aggregate, HAVING
   - __domain drill-down: group result → list of matching records
@@ -220,6 +221,24 @@ def main() -> None:
 
         section("1. list() — no domain (all records)")
         show("all orders", engine.list(session))
+
+        # ── Section 1b: count() — number of matches, no rows fetched ──────
+
+        section("1b. count() — total matches for a domain (SELECT COUNT(*))")
+
+        print(f"\n  total orders: {engine.count(session)}")
+        print(
+            "  CONFIRMED orders: "
+            f"{engine.count(session, domain=[['status', '=', 'CONFIRMED']])}"
+        )
+        print(
+            "  orders with a line quantity > 2: "
+            f"{engine.count(session, domain=[['lines.quantity', '>', 2]])}"
+        )
+        print(
+            "  orders where customer.city.country.name ilike '%Ind%': "
+            f"{engine.count(session, domain=[['customer.city.country.name', 'ilike', '%Ind%']])}"
+        )
 
         # ── Section 2: Simple conditions ─────────────────────────────────
 
