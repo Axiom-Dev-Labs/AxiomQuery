@@ -10,7 +10,7 @@ from sqlalchemy.sql.expression import ColumnElement
 
 from axiom_query.ast import And, Bool, Condition, Not, Or, QuerySpec
 from axiom_query.operators import Op
-from axiom_query.schema import ModelSchema
+from axiom_query.schema import ModelSchema, derive_schema
 
 SAResolver = Callable[[str, Op, Any], ColumnElement]
 
@@ -89,48 +89,58 @@ def _resolve_column(schema: ModelSchema, field_path: str) -> ColumnElement:
         return schema.table.c[field_path]
 
 
+def _resolve_path_condition(
+    schema: ModelSchema, segments: list[str], op: Op, val: Any
+) -> ColumnElement:
+    """Resolve a (possibly multi-hop) relational path into a WHERE condition.
+
+    The leaf segment is a scalar column; every preceding segment is an O2M or
+    M2O relation, each wrapped in a correlated EXISTS so arbitrary depth and
+    mixed O2M/M2O chains are supported.
+    """
+    from axiom_query.errors import QueryError
+
+    head, *rest = segments
+
+    # Leaf: scalar column on the current model
+    if not rest:
+        return _apply_operator(_resolve_column(schema, head), op, val)
+
+    # O2M: FK is on the child table; correlate child rows to the parent PK
+    child = schema.children.get(head)
+    if child is not None:
+        inner = _resolve_path_condition(derive_schema(child.model_class), rest, op, val)
+        parent_pk = next(iter(schema.table.primary_key))
+        return exists(
+            select(1)
+            .select_from(child.table)
+            .where(and_(child.table.c[child.fk_field] == parent_pk, inner))
+        )
+
+    # M2O: FK is on the current table; correlate the referenced PK to the local FK
+    related = schema.related.get(head)
+    if related is not None:
+        inner = _resolve_path_condition(derive_schema(related.model_class), rest, op, val)
+        ref_pk = next(iter(related.table.primary_key))
+        return exists(
+            select(1)
+            .select_from(related.table)
+            .where(and_(ref_pk == schema.table.c[related.fk_field], inner))
+        )
+
+    all_relations = list(schema.children.keys()) + list(schema.related.keys())
+    raise QueryError(
+        "INVALID_FILTER_FIELD",
+        f"No relation '{head}' on {schema.model_class.__name__}. "
+        f"Available: {', '.join(all_relations) or 'none'}",
+    )
+
+
 def _make_table_resolver(schema: ModelSchema) -> SAResolver:
     """Create a WHERE resolver that resolves field paths against table columns."""
 
     def resolve(fp: str, op: Op, val: Any) -> ColumnElement:
-        if "." in fp:
-            rel_name, field_name = fp.split(".", 1)
-            from axiom_query.errors import QueryError
-
-            # O2M: FK is on the child table; use EXISTS over child rows
-            child = schema.children.get(rel_name)
-            if child is not None:
-                fk_col = child.table.c[child.fk_field]
-                field_col = child.table.c[field_name]
-                condition = _apply_operator(field_col, op, val)
-                return exists(
-                    select(1)
-                    .select_from(child.table)
-                    .where(and_(fk_col == schema.table.c.id, condition))
-                )
-
-            # M2O: FK is on the current table; use EXISTS over the referenced table
-            related = schema.related.get(rel_name)
-            if related is not None:
-                local_fk_col = schema.table.c[related.fk_field]
-                ref_pk = next(iter(related.table.primary_key))
-                field_col = related.table.c[field_name]
-                condition = _apply_operator(field_col, op, val)
-                return exists(
-                    select(1)
-                    .select_from(related.table)
-                    .where(and_(ref_pk == local_fk_col, condition))
-                )
-
-            all_relations = list(schema.children.keys()) + list(schema.related.keys())
-            raise QueryError(
-                "INVALID_FILTER_FIELD",
-                f"No relation '{rel_name}' on {schema.model_class.__name__}. "
-                f"Available: {', '.join(all_relations) or 'none'}",
-            )
-        else:
-            col = _resolve_column(schema, fp)
-            return _apply_operator(col, op, val)
+        return _resolve_path_condition(schema, fp.split("."), op, val)
 
     return resolve
 

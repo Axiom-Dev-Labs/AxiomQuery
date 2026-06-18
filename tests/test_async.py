@@ -19,3 +19,11 @@ async def test_aread_group(async_session, engine):
         async_session, groupby=["status"], aggregates=["__count"]
     )
     assert total == 2
+
+
+@pytest.mark.asyncio
+async def test_alist_nested_relational_path(async_session, engine):
+    # Order → customer (M2O) → city (M2O) → name, over the async path
+    records = await engine.alist(async_session, domain=[["customer.city.name", "=", "Mumbai"]])
+    assert len(records) == 1
+    assert records[0].id == 1

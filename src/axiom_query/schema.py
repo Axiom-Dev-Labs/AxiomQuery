@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 from sqlalchemy import Column, Table
 from sqlalchemy import inspect as sa_inspect
@@ -15,6 +16,7 @@ class ChildSchema:
     table: Table
     fk_field: str
     columns: dict[str, Column]
+    model_class: type  # comodel class, enables N-level path traversal
 
 
 @dataclass
@@ -29,6 +31,7 @@ class RelatedSchema:
     table: Table
     fk_field: str  # FK column name on the current (owning) table
     columns: dict[str, Column]
+    model_class: type  # comodel class, enables N-level path traversal
 
 
 @dataclass
@@ -40,8 +43,14 @@ class ModelSchema:
     related: dict[str, RelatedSchema] = field(default_factory=dict)
 
 
+@lru_cache(maxsize=None)
 def derive_schema(model_class: type) -> ModelSchema:
-    """Derive a ModelSchema from a SA ORM model class using inspect()."""
+    """Derive a ModelSchema from a SA ORM model class using inspect().
+
+    Cached per model_class: schemas are derived on demand while traversing
+    N-level relational paths, and caching keeps cyclic relations
+    (Order.lines -> OrderLine.order -> Order ...) from re-deriving endlessly.
+    """
     mapper = sa_inspect(model_class)
     table = mapper.local_table
     columns = {col.key: col for col in mapper.columns}
@@ -59,6 +68,7 @@ def derive_schema(model_class: type) -> ModelSchema:
                 table=child_table,
                 fk_field=child_fk_col.key,
                 columns=child_columns,
+                model_class=rel.mapper.class_,
             )
         elif rel.direction == RelationshipDirection.MANYTOONE:
             ref_table = rel.mapper.local_table
@@ -70,6 +80,7 @@ def derive_schema(model_class: type) -> ModelSchema:
                 table=ref_table,
                 fk_field=local_fk_col.key,
                 columns=ref_columns,
+                model_class=rel.mapper.class_,
             )
 
     return ModelSchema(
