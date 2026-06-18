@@ -71,3 +71,29 @@ def test_read_group_domain_drilldown(session, engine):
     records = engine.list(session, domain=confirmed["__domain"])
     assert len(records) == 2
     assert all(r.status == "CONFIRMED" for r in records)
+
+
+# Slice 11 — N-level deep relational paths in groupby / aggregate
+def test_read_group_o2m_then_m2o_groupby(session, engine):
+    # group order lines by product category (O2M → M2O), sum line quantities
+    groups, total = engine.read_group(
+        session,
+        groupby=["lines.product.category"],
+        aggregates=["lines.quantity:sum"],
+    )
+    by_cat = {g["lines__product__category"]: g["lines__quantity__sum"] for g in groups}
+    # Hardware: Widget A (2) + Widget B (3) = 5 ; Electronics: Gadget (1)
+    assert by_cat["Hardware"] == 5
+    assert by_cat["Electronics"] == 1
+
+
+def test_read_group_two_level_m2o_groupby(session, engine):
+    # group orders by customer's city name (M2O → M2O)
+    groups, total = engine.read_group(
+        session,
+        groupby=["customer.city.name"],
+        aggregates=["__count"],
+    )
+    by_city = {g["customer__city__name"]: g["__count"] for g in groups}
+    assert by_city["Mumbai"] == 1
+    assert by_city["New York"] == 1

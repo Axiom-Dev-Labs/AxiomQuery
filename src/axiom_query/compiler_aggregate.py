@@ -18,7 +18,7 @@ from axiom_query.aggregation import (
     ReadGroupQuery,
 )
 from axiom_query.compiler import _walk_ast, _make_alias_resolver
-from axiom_query.schema import ModelSchema
+from axiom_query.schema import ModelSchema, derive_schema
 
 
 def compile_read_group(
@@ -30,31 +30,18 @@ def compile_read_group(
     """Compile a ReadGroupQuery into a SQLAlchemy SELECT statement."""
     from axiom_query.errors import QueryError
 
-    # Multi-child guard
-    child_entities = query.referenced_child_entities
-    if len(child_entities) > 1:
+    # Build the JOIN chain spanning every relational path (O2M and M2O, N-level deep).
+    from_clause, alias_cache, o2m_edges = _build_join_tree(
+        schema, query.referenced_relation_paths
+    )
+
+    # O2M fan-out double-counts aggregates; allow at most one O2M edge in the tree.
+    if o2m_edges > 1:
         raise QueryError(
             "MULTI_CHILD_AGGREGATION",
-            f"Aggregating across multiple child entities simultaneously is not supported "
-            f"(referenced: {', '.join(sorted(child_entities))}). "
-            f"Aggregate one child entity at a time.",
-        )
-
-    # Build JOINs for child entities
-    from_clause = schema.table
-    joined_children: dict[str, Any] = {}
-
-    for child_name in child_entities:
-        child = schema.children.get(child_name)
-        if child is None:
-            raise QueryError(
-                "INVALID_FILTER_FIELD",
-                f"No child relation '{child_name}' on {schema.model_class.__name__}",
-            )
-        joined_children[child_name] = child
-        from_clause = from_clause.outerjoin(
-            child.table,
-            schema.table.c.id == child.table.c[child.fk_field],
+            "Aggregating across multiple O2M child entities simultaneously is not "
+            "supported (the join would fan out and double-count). "
+            "Aggregate one O2M child branch at a time.",
         )
 
     # Build SELECT columns
@@ -62,13 +49,13 @@ def compile_read_group(
     groupby_exprs: dict[str, ColumnElement] = {}
 
     for g in query.groupby:
-        expr = _compile_groupby_column(g, schema, joined_children, dialect_name)
+        expr = _compile_groupby_column(g, schema, alias_cache, dialect_name)
         groupby_exprs[g.alias] = expr
         select_columns.append(expr.label(g.alias))
 
     aggregate_exprs: dict[str, ColumnElement] = {}
     for a in query.aggregates:
-        expr = _compile_aggregate_column(a, schema, joined_children)
+        expr = _compile_aggregate_column(a, schema, alias_cache)
         aggregate_exprs[a.alias] = expr
         select_columns.append(expr.label(a.alias))
 
@@ -128,13 +115,62 @@ def _date_trunc_expr(granularity: DateGranularity, col: ColumnElement, dialect_n
         return func.date_trunc(granularity.value, col).cast(SADate)
 
 
+def _build_join_tree(
+    schema: ModelSchema, paths: set[tuple[str, ...]]
+) -> tuple[Any, dict[tuple[str, ...], tuple[Any, ModelSchema]], int]:
+    """Build an outer-join chain covering every relation-path prefix.
+
+    Returns the FROM clause, a cache mapping each path prefix to its
+    (aliased table, schema), and the number of O2M edges traversed. Shared
+    prefixes reuse a single join; divergent paths get distinct aliases.
+    """
+    from axiom_query.errors import QueryError
+
+    from_clause: Any = schema.table
+    alias_cache: dict[tuple[str, ...], tuple[Any, ModelSchema]] = {(): (schema.table, schema)}
+    o2m_edges = 0
+
+    for path in sorted(paths, key=len):
+        for i in range(1, len(path) + 1):
+            prefix = path[:i]
+            if prefix in alias_cache:
+                continue
+            parent_table, parent_schema = alias_cache[prefix[:-1]]
+            seg = prefix[-1]
+            child = parent_schema.children.get(seg)
+            related = parent_schema.related.get(seg)
+            if child is not None:
+                next_schema = derive_schema(child.model_class)
+                alias = next_schema.table.alias()
+                parent_pk = next(iter(parent_schema.table.primary_key)).name
+                from_clause = from_clause.outerjoin(
+                    alias, parent_table.c[parent_pk] == alias.c[child.fk_field]
+                )
+                o2m_edges += 1
+            elif related is not None:
+                next_schema = derive_schema(related.model_class)
+                alias = next_schema.table.alias()
+                ref_pk = next(iter(next_schema.table.primary_key)).name
+                from_clause = from_clause.outerjoin(
+                    alias, parent_table.c[related.fk_field] == alias.c[ref_pk]
+                )
+            else:
+                raise QueryError(
+                    "INVALID_FILTER_FIELD",
+                    f"No relation '{seg}' on {parent_schema.model_class.__name__}",
+                )
+            alias_cache[prefix] = (alias, next_schema)
+
+    return from_clause, alias_cache, o2m_edges
+
+
 def _compile_groupby_column(
     spec: GroupBySpec,
     schema: ModelSchema,
-    joined_children: dict,
+    alias_cache: dict,
     dialect_name: str,
 ) -> ColumnElement:
-    col = _resolve_agg_column(spec.field_path, schema, joined_children)
+    col = _resolve_agg_column(spec.field_path, schema, alias_cache)
 
     if spec.granularity is None:
         return col
@@ -147,7 +183,7 @@ def _compile_groupby_column(
 def _compile_aggregate_column(
     spec: AggregateSpec,
     schema: ModelSchema,
-    joined_children: dict,
+    alias_cache: dict,
 ) -> ColumnElement:
     from axiom_query.errors import QueryError
 
@@ -159,7 +195,7 @@ def _compile_aggregate_column(
             )
         return func.count()
 
-    col = _resolve_agg_column(spec.field_path, schema, joined_children)
+    col = _resolve_agg_column(spec.field_path, schema, alias_cache)
 
     if spec.function in (AggFunc.SUM, AggFunc.AVG):
         _validate_numeric_col(spec.field_path, col)
@@ -186,19 +222,27 @@ def _compile_aggregate_column(
 def _resolve_agg_column(
     field_path: str,
     schema: ModelSchema,
-    joined_children: dict,
+    alias_cache: dict,
 ) -> ColumnElement:
     from axiom_query.errors import QueryError
 
     if "." in field_path:
-        child_name, field_name = field_path.split(".", 1)
-        child = joined_children.get(child_name) or schema.children.get(child_name)
-        if child is None:
+        segments = field_path.split(".")
+        prefix = tuple(segments[:-1])
+        leaf = segments[-1]
+        entry = alias_cache.get(prefix)
+        if entry is None:
             raise QueryError(
                 "INVALID_FILTER_FIELD",
-                f"No child relation '{child_name}' on {schema.model_class.__name__}",
+                f"No relation path '{'.'.join(prefix)}' on {schema.model_class.__name__}",
             )
-        return child.table.c[field_name]
+        table, leaf_schema = entry
+        if leaf not in leaf_schema.columns:
+            raise QueryError(
+                "INVALID_FILTER_FIELD",
+                f"No field '{leaf}' on relation path '{'.'.join(prefix)}'",
+            )
+        return table.c[leaf]
     else:
         if field_path not in schema.columns:
             raise QueryError(

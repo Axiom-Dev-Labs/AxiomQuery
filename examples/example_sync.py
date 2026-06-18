@@ -36,10 +36,37 @@ class Base(DeclarativeBase):
     pass
 
 
+class Country(Base):
+    __tablename__ = "countries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+
+
+class City(Base):
+    __tablename__ = "cities"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    country_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("countries.id"), nullable=True
+    )
+    country: Mapped[Optional["Country"]] = relationship()
+
+
+class Product(Base):
+    __tablename__ = "products"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    category: Mapped[str] = mapped_column(String(100))
+
+
 class Customer(Base):
     __tablename__ = "customers"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
+    city_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("cities.id"), nullable=True
+    )
+    city: Mapped[Optional["City"]] = relationship()
 
     def __repr__(self) -> str:
         return f"Customer(id={self.id}, name={self.name!r})"
@@ -68,6 +95,10 @@ class OrderLine(Base):
     product_name: Mapped[str] = mapped_column(String(100))
     quantity: Mapped[int] = mapped_column()
     unit_price: Mapped[int] = mapped_column()
+    product_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("products.id"), nullable=True
+    )
+    product: Mapped[Optional["Product"]] = relationship()
     order: Mapped["Order"] = relationship(back_populates="lines")
 
 
@@ -77,8 +108,31 @@ class OrderLine(Base):
 def seed(session: Session) -> None:
     session.add_all(
         [
-            Customer(id=1, name="Joy"),
-            Customer(id=2, name="Bob"),
+            Country(id=1, name="India"),
+            Country(id=2, name="USA"),
+        ]
+    )
+    session.flush()
+    session.add_all(
+        [
+            City(id=1, name="Mumbai", country_id=1),
+            City(id=2, name="New York", country_id=2),
+        ]
+    )
+    session.flush()
+    session.add_all(
+        [
+            Product(id=1, name="Widget A", category="Hardware"),
+            Product(id=2, name="Widget B", category="Hardware"),
+            Product(id=3, name="Gadget", category="Electronics"),
+            Product(id=4, name="Accessory", category="Electronics"),
+        ]
+    )
+    session.flush()
+    session.add_all(
+        [
+            Customer(id=1, name="Joy", city_id=1),  # Mumbai, India
+            Customer(id=2, name="Bob", city_id=2),  # New York, USA
         ]
     )
     session.flush()
@@ -117,10 +171,10 @@ def seed(session: Session) -> None:
     session.flush()
     session.add_all(
         [
-            OrderLine(order_id=1, product_name="Widget A", quantity=2, unit_price=50),
-            OrderLine(order_id=1, product_name="Widget B", quantity=3, unit_price=50),
-            OrderLine(order_id=2, product_name="Gadget", quantity=1, unit_price=200),
-            OrderLine(order_id=4, product_name="Accessory", quantity=5, unit_price=15),
+            OrderLine(order_id=1, product_name="Widget A", quantity=2, unit_price=50, product_id=1),
+            OrderLine(order_id=1, product_name="Widget B", quantity=3, unit_price=50, product_id=2),
+            OrderLine(order_id=2, product_name="Gadget", quantity=1, unit_price=200, product_id=3),
+            OrderLine(order_id=4, product_name="Accessory", quantity=5, unit_price=15, product_id=4),
         ]
     )
     session.commit()
@@ -364,6 +418,27 @@ def main() -> None:
             ),
         )
 
+        # ── Section 8b: N-level relational filtering ─────────────────────
+
+        section("8b. N-level relational filtering (deep dot-notation)")
+
+        show(
+            "2-level M2O — orders where customer.city.name = 'Mumbai'",
+            engine.list(session, domain=[["customer.city.name", "=", "Mumbai"]]),
+        )
+
+        show(
+            "3-level M2O — orders where customer.city.country.name ilike '%Ind%'",
+            engine.list(
+                session, domain=[["customer.city.country.name", "ilike", "%Ind%"]]
+            ),
+        )
+
+        show(
+            "O2M → M2O — orders with a line whose product.category = 'Electronics'",
+            engine.list(session, domain=[["lines.product.category", "=", "Electronics"]]),
+        )
+
         # ── Section 9: list() options ─────────────────────────────────────
 
         section("9. list() — limit, offset, order_by")
@@ -424,6 +499,17 @@ def main() -> None:
             aggregates=["__count", "lines.quantity:sum"],
         )
         show_groups("sum of line quantities per status", groups, total)
+
+        # ── Section 12b: read_group — N-level deep groupby ───────────────
+
+        section("13b. read_group — deep relational groupby (O2M → M2O)")
+
+        groups, total = engine.read_group(
+            session,
+            groupby=["lines.product.category"],
+            aggregates=["lines.quantity:sum"],
+        )
+        show_groups("sum of line quantities per product category", groups, total)
 
         # ── Section 13: read_group — HAVING ──────────────────────────────
 

@@ -89,3 +89,54 @@ def test_list_m2o_unknown_relation_raises(session, engine):
 
     with pytest.raises(QueryError):
         engine.list(session, domain=[["nonexistent.name", "=", "x"]])
+
+
+# Slice 7 — N-level deep relational paths (O2M + M2O, arbitrary depth)
+def test_list_two_level_m2o(session, engine):
+    # Order → customer (M2O) → city (M2O) → name
+    records = engine.list(session, domain=[["customer.city.name", "=", "Mumbai"]])
+    assert len(records) == 1
+    assert records[0].id == 1  # Alice → Mumbai
+
+
+def test_list_three_level_m2o(session, engine):
+    # Order → customer → city → country → name
+    records = engine.list(session, domain=[["customer.city.country.name", "ilike", "%Ind%"]])
+    assert len(records) == 1
+    assert records[0].id == 1  # Alice → Mumbai → India
+
+
+def test_list_o2m_then_m2o(session, engine):
+    # Order → lines (O2M) → product (M2O) → category
+    records = engine.list(session, domain=[["lines.product.category", "=", "Electronics"]])
+    assert len(records) == 1
+    assert records[0].id == 2  # order 2 has the Gadget (Electronics) line
+
+
+def test_list_nested_path_combined_with_scalar(session, engine):
+    # Nested path AND'd with a scalar filter still narrows correctly
+    records = engine.list(
+        session,
+        domain=[["customer.city.name", "=", "Mumbai"], ["status", "=", "CONFIRMED"]],
+    )
+    assert len(records) == 1
+    assert records[0].id == 1
+
+
+def test_list_nested_path_no_match(session, engine):
+    records = engine.list(session, domain=[["customer.city.country.name", "=", "Atlantis"]])
+    assert records == []
+
+
+def test_list_nested_unknown_relation_raises(session, engine):
+    from axiom_query.errors import QueryError
+
+    with pytest.raises(QueryError):
+        engine.list(session, domain=[["customer.nope.name", "=", "x"]])
+
+
+def test_list_nested_unknown_leaf_field_raises(session, engine):
+    from axiom_query.errors import QueryError
+
+    with pytest.raises(QueryError):
+        engine.list(session, domain=[["customer.city.bogus", "=", "x"]])

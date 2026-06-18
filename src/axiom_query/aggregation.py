@@ -100,12 +100,15 @@ class ReadGroupQuery:
         return m
 
     @property
-    def referenced_child_entities(self) -> set[str]:
-        children: set[str] = set()
+    def referenced_relation_paths(self) -> set[tuple[str, ...]]:
+        """Distinct relation-path prefixes (everything but the leaf field) across
+        all groupby + aggregate field paths. E.g. "lines.product.category"
+        contributes the prefix ("lines", "product")."""
+        paths: set[tuple[str, ...]] = set()
         for g in self.groupby:
             if "." in g.field_path:
-                children.add(g.field_path.split(".")[0])
+                paths.add(tuple(g.field_path.split(".")[:-1]))
         for a in self.aggregates:
             if a.field_path and "." in a.field_path:
-                children.add(a.field_path.split(".")[0])
-        return children
+                paths.add(tuple(a.field_path.split(".")[:-1]))
+        return paths
