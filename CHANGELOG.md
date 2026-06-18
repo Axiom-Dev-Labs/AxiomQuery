@@ -9,6 +9,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+---
+
+## [0.4.0] — 2026-06-19
+
 ### Added
 
 - `count()` / `acount()` — return the number of records matching a domain via `SELECT COUNT(*)`, without fetching any rows
