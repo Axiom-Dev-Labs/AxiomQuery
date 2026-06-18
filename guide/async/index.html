@@ -793,6 +793,10 @@ return shape. Pass an <code>AsyncSession</code> instead of a <code>Session</code
 <td><code>alist</code></td>
 </tr>
 <tr>
+<td><code>count</code></td>
+<td><code>acount</code></td>
+</tr>
+<tr>
 <td><code>search</code></td>
 <td><code>asearch</code></td>
 </tr>
@@ -825,16 +829,19 @@ development and tests, <strong>aiosqlite</strong> works well:</p>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="c1"># filtered records</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">records</span> <span class="o">=</span> <span class="k">await</span> <span class="n">engine</span><span class="o">.</span><span class="n">alist</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">[[</span><span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="s2">&quot;=&quot;</span><span class="p">,</span> <span class="s2">&quot;CONFIRMED&quot;</span><span class="p">]])</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="c1"># grouped aggregation</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">groups</span><span class="p">,</span> <span class="n">total</span> <span class="o">=</span> <span class="k">await</span> <span class="n">engine</span><span class="o">.</span><span class="n">aread_group</span><span class="p">(</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        <span class="n">session</span><span class="p">,</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        <span class="n">groupby</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">],</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>        <span class="n">aggregates</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;__count&quot;</span><span class="p">,</span> <span class="s2">&quot;total:sum&quot;</span><span class="p">],</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="p">)</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="c1"># __domain drill-down</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">:</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>        <span class="n">rows</span> <span class="o">=</span> <span class="k">await</span> <span class="n">engine</span><span class="o">.</span><span class="n">alist</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="n">group</span><span class="p">[</span><span class="s2">&quot;__domain&quot;</span><span class="p">])</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="c1"># how many match — no rows fetched</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">n</span> <span class="o">=</span> <span class="k">await</span> <span class="n">engine</span><span class="o">.</span><span class="n">acount</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">[[</span><span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="s2">&quot;=&quot;</span><span class="p">,</span> <span class="s2">&quot;CONFIRMED&quot;</span><span class="p">]])</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="c1"># grouped aggregation</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">groups</span><span class="p">,</span> <span class="n">total</span> <span class="o">=</span> <span class="k">await</span> <span class="n">engine</span><span class="o">.</span><span class="n">aread_group</span><span class="p">(</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>        <span class="n">session</span><span class="p">,</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>        <span class="n">groupby</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">],</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>        <span class="n">aggregates</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;__count&quot;</span><span class="p">,</span> <span class="s2">&quot;total:sum&quot;</span><span class="p">],</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="p">)</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="c1"># __domain drill-down</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>    <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">:</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>        <span class="n">rows</span> <span class="o">=</span> <span class="k">await</span> <span class="n">engine</span><span class="o">.</span><span class="n">alist</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="n">group</span><span class="p">[</span><span class="s2">&quot;__domain&quot;</span><span class="p">])</span>
 </code></pre></div>
 <h2 id="streaming">Streaming<a class="headerlink" href="#streaming" title="Permanent link">&para;</a></h2>
 <p><code>asearch</code> returns an async iterator — <code>await</code> the call, then consume it with <code>async for</code>:</p>

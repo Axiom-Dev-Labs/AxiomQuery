@@ -898,6 +898,10 @@ instances:</p>
 <p>The <code>domain</code> argument is the heart of AxiomQuery — a filter expressed as plain data. The
 example above reads as "status equals CONFIRMED". Pass <code>domain=None</code> (or omit it) to return
 all records.</p>
+<p>To find out <em>how many</em> records match a domain without fetching them, use <code>count()</code> — it
+issues a <code>SELECT COUNT(*)</code> and returns an <code>int</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>    <span class="n">n</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">[[</span><span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="s2">&quot;=&quot;</span><span class="p">,</span> <span class="s2">&quot;CONFIRMED&quot;</span><span class="p">]])</span>
+</code></pre></div>
 <h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../guide/domain-syntax/">Domain Filter Syntax</a> — every operator and composition form.</li>
@@ -906,8 +910,8 @@ all records.</p>
 </ul>
 <h2 id="runnable-examples">Runnable examples<a class="headerlink" href="#runnable-examples" title="Permanent link">&para;</a></h2>
 <p>Self-contained, runnable scripts live in <a href="https://github.com/Axiom-Dev-Labs/AxiomQuery/tree/main/examples"><code>examples/</code></a>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>python<span class="w"> </span>examples/example_sync.py
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>python<span class="w"> </span>examples/example_async.py
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>python<span class="w"> </span>examples/example_sync.py
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>python<span class="w"> </span>examples/example_async.py
 </code></pre></div>
 <p>Both seed an in-memory SQLite database and walk through every feature: simple filters,
 <code>AND</code> / <code>OR</code> / <code>NOT</code>, nested composition, child + N-level relational filtering, pagination,

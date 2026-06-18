@@ -796,6 +796,8 @@ them against any ORM model without writing raw SQL.</p>
   depth (<code>customer.city.country.name</code>).</li>
 <li><strong>Grouped aggregation</strong> — an Odoo-style <a href="guide/aggregation/"><code>read_group</code></a> with date
   bucketing, child aggregates, <code>HAVING</code>, and per-group <code>__domain</code> drill-down.</li>
+<li><strong>Counting</strong> — <code>count</code> returns how many records match a domain via <code>SELECT COUNT(*)</code>,
+  without fetching any rows.</li>
 <li><strong>Streaming</strong> — <a href="guide/streaming-search/"><code>search</code></a> iterates large result sets with a
   server-side cursor.</li>
 <li><strong>Sync + async</strong> — every method has an <code>a</code>-prefixed async twin.</li>
@@ -815,12 +817,15 @@ them against any ORM model without writing raw SQL.</p>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="c1"># filtered records</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">records</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">list</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">[[</span><span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="s2">&quot;=&quot;</span><span class="p">,</span> <span class="s2">&quot;CONFIRMED&quot;</span><span class="p">]])</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="c1"># grouped aggregation</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">groups</span><span class="p">,</span> <span class="n">total</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">read_group</span><span class="p">(</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>        <span class="n">session</span><span class="p">,</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>        <span class="n">groupby</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">],</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>        <span class="n">aggregates</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;__count&quot;</span><span class="p">,</span> <span class="s2">&quot;total:sum&quot;</span><span class="p">],</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="p">)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="c1"># how many match — no rows fetched</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">n</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">[[</span><span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="s2">&quot;=&quot;</span><span class="p">,</span> <span class="s2">&quot;CONFIRMED&quot;</span><span class="p">]])</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="c1"># grouped aggregation</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="n">groups</span><span class="p">,</span> <span class="n">total</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">read_group</span><span class="p">(</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>        <span class="n">session</span><span class="p">,</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>        <span class="n">groupby</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">],</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>        <span class="n">aggregates</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;__count&quot;</span><span class="p">,</span> <span class="s2">&quot;total:sum&quot;</span><span class="p">],</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>    <span class="p">)</span>
 </code></pre></div>
 <h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>

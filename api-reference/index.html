@@ -863,6 +863,11 @@ construction — no database connection is opened. Reuse one instance across req
 <td>Materialised records matching the domain.</td>
 </tr>
 <tr>
+<td><code>count(session, domain=None)</code></td>
+<td><code>int</code></td>
+<td>Number of records matching the domain via <code>SELECT COUNT(*)</code> — no rows fetched. Ignores <code>limit</code>/<code>offset</code>/<code>order_by</code>.</td>
+</tr>
+<tr>
 <td><code>search(session, domain=None, order_by=None)</code></td>
 <td>iterator</td>
 <td>Streams every matching record (server-side cursor, batches of 1000). No <code>limit</code>/<code>offset</code>.</td>
@@ -876,6 +881,11 @@ construction — no database connection is opened. Reuse one instance across req
 <td><code>alist(...)</code></td>
 <td><code>list</code></td>
 <td>Async <code>list</code>.</td>
+</tr>
+<tr>
+<td><code>acount(...)</code></td>
+<td><code>int</code></td>
+<td>Async <code>count</code>.</td>
 </tr>
 <tr>
 <td><code>asearch(...)</code></td>
