@@ -11,7 +11,11 @@ row-by-row without loading everything into memory at once.
 | Memory | holds every row | one batch at a time |
 | `limit` / `offset` | supported | **not** supported |
 | `len()` / indexing | yes | no — single-pass |
-| Use when | you need a page, a count, or random access | you need to process **every** match |
+| Use when | you need a page or random access | you need to process **every** match |
+
+!!! tip "Just need the number of matches?"
+    Don't materialise with `list` (or walk `search`) only to count. `engine.count(session,
+    domain=...)` issues a `SELECT COUNT(*)` and returns an `int` without fetching any rows.
 
 ```python
 # materialised page
