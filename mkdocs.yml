@@ -1,0 +1,60 @@
+site_name: AxiomQuery
+site_description: Specification-based query and aggregation engine for SQLAlchemy 2.0 ORM models
+site_url: https://axiom-dev-labs.github.io/AxiomQuery/
+repo_url: https://github.com/Axiom-Dev-Labs/AxiomQuery
+repo_name: Axiom-Dev-Labs/AxiomQuery
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+  - toc:
+      permalink: true
+  - tables
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Guide:
+      - Domain Filter Syntax: guide/domain-syntax.md
+      - Aggregation & read_group: guide/aggregation.md
+      - Relational Filtering: guide/relational-filtering.md
+      - Streaming & Search: guide/streaming-search.md
+      - Async Usage: guide/async.md
+  - Philosophy: philosophy.md
+  - API Reference: api-reference.md
+  - Changelog: changelog.md
