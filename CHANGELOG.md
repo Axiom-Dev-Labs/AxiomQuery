@@ -11,6 +11,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.0] — 2026-10-18
+
+### Added
+
+- `compile_domain(spec, schema, entity=None)` — optional `entity` argument to compile a domain against an `aliased()` entity
+
+### Changed
+
+- Domains compile against mapped ORM attributes instead of raw `Table` columns, so a compiled domain can be used with `with_loader_criteria` (including inside `joinedload`) for session-wide filtering
+  - Relational `EXISTS` subqueries select from per-hop table aliases, so they never auto-correlate against the same table in an outer query
+  - `order_by` resolves through mapped attributes
+- `read_group()` / `aread_group()` select from the mapped model class, so session-level `with_loader_criteria` now applies to aggregates
+
+---
+
 ## [0.4.0] — 2026-06-19
 
 ### Added
