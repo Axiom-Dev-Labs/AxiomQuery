@@ -15,7 +15,7 @@ from axiom_query import parse_domain
 from axiom_query.compiler import compile_domain
 from axiom_query.schema import derive_schema
 
-from conftest import Order, OrderLine
+from conftest import Customer, Order, OrderLine
 
 
 def _criteria(model, domain):
@@ -131,3 +131,11 @@ def test_rule_applies_to_read_group_over_o2m_child(session, engine, rules):
 def test_read_group_unchanged_without_rules(session, engine):
     groups, _ = engine.read_group(session, groupby=["status"], aggregates=["__count"])
     assert {g["status"]: g["__count"] for g in groups} == {"CONFIRMED": 2, "DRAFT": 1}
+
+
+def test_rule_on_joined_model_hides_it_in_read_group(session, engine, rules):
+    # read_group joins related models as ORM entities, so their rules apply to the join:
+    # Bob's order is still counted, but under no customer city
+    rules[Customer] = [["name", "!=", "Bob"]]
+    groups, _ = engine.read_group(session, groupby=["customer.city.name"], aggregates=["__count"])
+    assert {g["customer__city__name"]: g["__count"] for g in groups} == {"Mumbai": 1, None: 2}

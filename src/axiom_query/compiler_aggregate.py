@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import Date as SADate, func, select
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.expression import ColumnElement, Select
 
 from axiom_query.aggregation import (
@@ -130,7 +131,9 @@ def _build_join_tree(
     Returns the ordered (target, onclause) joins to apply after selecting
     from the root model, a cache mapping each path prefix to its (join
     target, schema), and the number of O2M edges traversed. Shared prefixes
-    reuse a single join; divergent paths get distinct aliases.
+    reuse a single join; divergent paths get distinct aliases. Each join goes
+    through the relationship itself, so it uses its full join condition, not
+    just the foreign key.
     """
     from axiom_query.errors import QueryError
 
@@ -151,28 +154,16 @@ def _build_join_tree(
             related = parent_schema.related.get(seg)
             if child is not None:
                 next_schema = derive_schema(child.model_class)
-                alias = next_schema.table.alias()
-                parent_pk = next(iter(parent_schema.table.primary_key)).key
-                joins.append((
-                    alias,
-                    column_on(parent_target, parent_schema, parent_pk)
-                    == alias.c[child.fk_field],
-                ))
                 o2m_edges += 1
             elif related is not None:
                 next_schema = derive_schema(related.model_class)
-                alias = next_schema.table.alias()
-                ref_pk = next(iter(next_schema.table.primary_key)).key
-                joins.append((
-                    alias,
-                    column_on(parent_target, parent_schema, related.fk_field)
-                    == alias.c[ref_pk],
-                ))
             else:
                 raise QueryError(
                     "INVALID_FILTER_FIELD",
                     f"No relation '{seg}' on {parent_schema.model_class.__name__}",
                 )
+            alias = aliased(next_schema.model_class)
+            joins.append((alias, getattr(parent_target, seg).of_type(alias)))
             alias_cache[prefix] = (alias, next_schema)
 
     return joins, alias_cache, o2m_edges
