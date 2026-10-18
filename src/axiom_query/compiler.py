@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Callable
 
-from sqlalchemy import Date, DateTime, and_, exists, not_, or_, select, true, false
+from sqlalchemy import Date, DateTime, and_, not_, or_, true, false
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy.sql.expression import ColumnElement, FromClause
+from sqlalchemy.orm import aliased
+from sqlalchemy.sql.expression import ColumnElement
 
 from axiom_query.ast import And, Bool, Condition, Not, Or, QuerySpec
 from axiom_query.operators import Op
@@ -62,13 +63,10 @@ def _make_alias_resolver(alias_map: dict[str, ColumnElement]) -> SAResolver:
 def column_on(target: Any, schema: ModelSchema, name: str) -> ColumnElement:
     """Return column ``name`` of ``schema`` as it appears on ``target``.
 
-    ``target`` is either a mapped class / ``aliased()`` entity, resolved via the
-    mapped attribute so ORM adaptation (aliases, joined eager loads,
-    ``with_loader_criteria``) can retarget it, or a Core table alias used
-    inside a relational EXISTS hop.
+    ``target`` is a mapped class or an ``aliased()`` entity; the column is
+    resolved via the mapped attribute so ORM adaptation (aliases, joined eager
+    loads, ``with_loader_criteria``) can retarget it.
     """
-    if isinstance(target, FromClause):
-        return target.c[name]
     prop = sa_inspect(schema.model_class).get_property_by_column(schema.columns[name])
     return getattr(target, prop.key)
 
@@ -92,10 +90,11 @@ def _resolve_path_condition(
     """Resolve a (possibly multi-hop) relational path into a WHERE condition.
 
     The leaf segment is a scalar column; every preceding segment is an O2M or
-    M2O relation, each wrapped in a correlated EXISTS so arbitrary depth and
-    mixed O2M/M2O chains are supported. Each hop selects from a fresh table
-    alias, so it never auto-correlates against the same table in an outer
-    query and is never retargeted by an outer ORM alias adapter.
+    M2O relation, compiled with the relationship's own ``any()`` / ``has()``
+    so the EXISTS uses its full join condition (including extra criteria such
+    as a model-name column), not just the foreign key. Each hop targets a
+    fresh ``aliased()`` entity, so it never auto-correlates against the same
+    table in an outer query.
     """
     from axiom_query.errors import QueryError
 
@@ -105,33 +104,23 @@ def _resolve_path_condition(
     if not rest:
         return _apply_operator(_resolve_column(schema, target, head), op, val)
 
-    # O2M: FK is on the child table; correlate child rows to the parent PK
+    # O2M: any child row matches
     child = schema.children.get(head)
     if child is not None:
-        child_alias = child.table.alias()
+        child_entity = aliased(child.model_class)
         inner = _resolve_path_condition(
-            derive_schema(child.model_class), child_alias, rest, op, val
+            derive_schema(child.model_class), child_entity, rest, op, val
         )
-        parent_pk = column_on(target, schema, next(iter(schema.table.primary_key)).key)
-        return exists(
-            select(1)
-            .select_from(child_alias)
-            .where(and_(child_alias.c[child.fk_field] == parent_pk, inner))
-        )
+        return getattr(target, head).of_type(child_entity).any(inner)
 
-    # M2O: FK is on the current table; correlate the referenced PK to the local FK
+    # M2O: the referenced row matches
     related = schema.related.get(head)
     if related is not None:
-        ref_alias = related.table.alias()
+        ref_entity = aliased(related.model_class)
         inner = _resolve_path_condition(
-            derive_schema(related.model_class), ref_alias, rest, op, val
+            derive_schema(related.model_class), ref_entity, rest, op, val
         )
-        ref_pk = ref_alias.c[next(iter(related.table.primary_key)).key]
-        return exists(
-            select(1)
-            .select_from(ref_alias)
-            .where(and_(ref_pk == column_on(target, schema, related.fk_field), inner))
-        )
+        return getattr(target, head).of_type(ref_entity).has(inner)
 
     all_relations = list(schema.children.keys()) + list(schema.related.keys())
     raise QueryError(
