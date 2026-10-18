@@ -17,7 +17,7 @@ from axiom_query.aggregation import (
     Pagination,
     ReadGroupQuery,
 )
-from axiom_query.compiler import _walk_ast, _make_alias_resolver
+from axiom_query.compiler import _walk_ast, _make_alias_resolver, column_on
 from axiom_query.schema import ModelSchema, derive_schema
 
 
@@ -31,7 +31,7 @@ def compile_read_group(
     from axiom_query.errors import QueryError
 
     # Build the JOIN chain spanning every relational path (O2M and M2O, N-level deep).
-    from_clause, alias_cache, o2m_edges = _build_join_tree(
+    joins, alias_cache, o2m_edges = _build_join_tree(
         schema, query.referenced_relation_paths
     )
 
@@ -65,7 +65,12 @@ def compile_read_group(
             "read_group must have at least one groupby or aggregate expression",
         )
 
-    stmt = select(*select_columns).select_from(from_clause)
+    # Root FROM on the mapped class (not its Table) so the statement is
+    # ORM-enabled and session-level with_loader_criteria applies to it, even
+    # when every selected column comes from a joined relation.
+    stmt = select(*select_columns).select_from(schema.model_class)
+    for target, onclause in joins:
+        stmt = stmt.outerjoin(target, onclause)
 
     # WHERE
     if query.domain is not None:
@@ -117,17 +122,22 @@ def _date_trunc_expr(granularity: DateGranularity, col: ColumnElement, dialect_n
 
 def _build_join_tree(
     schema: ModelSchema, paths: set[tuple[str, ...]]
-) -> tuple[Any, dict[tuple[str, ...], tuple[Any, ModelSchema]], int]:
-    """Build an outer-join chain covering every relation-path prefix.
+) -> tuple[
+    list[tuple[Any, ColumnElement]], dict[tuple[str, ...], tuple[Any, ModelSchema]], int
+]:
+    """Build the outer joins covering every relation-path prefix.
 
-    Returns the FROM clause, a cache mapping each path prefix to its
-    (aliased table, schema), and the number of O2M edges traversed. Shared
-    prefixes reuse a single join; divergent paths get distinct aliases.
+    Returns the ordered (target, onclause) joins to apply after selecting
+    from the root model, a cache mapping each path prefix to its (join
+    target, schema), and the number of O2M edges traversed. Shared prefixes
+    reuse a single join; divergent paths get distinct aliases.
     """
     from axiom_query.errors import QueryError
 
-    from_clause: Any = schema.table
-    alias_cache: dict[tuple[str, ...], tuple[Any, ModelSchema]] = {(): (schema.table, schema)}
+    joins: list[tuple[Any, ColumnElement]] = []
+    alias_cache: dict[tuple[str, ...], tuple[Any, ModelSchema]] = {
+        (): (schema.model_class, schema)
+    }
     o2m_edges = 0
 
     for path in sorted(paths, key=len):
@@ -135,25 +145,29 @@ def _build_join_tree(
             prefix = path[:i]
             if prefix in alias_cache:
                 continue
-            parent_table, parent_schema = alias_cache[prefix[:-1]]
+            parent_target, parent_schema = alias_cache[prefix[:-1]]
             seg = prefix[-1]
             child = parent_schema.children.get(seg)
             related = parent_schema.related.get(seg)
             if child is not None:
                 next_schema = derive_schema(child.model_class)
                 alias = next_schema.table.alias()
-                parent_pk = next(iter(parent_schema.table.primary_key)).name
-                from_clause = from_clause.outerjoin(
-                    alias, parent_table.c[parent_pk] == alias.c[child.fk_field]
-                )
+                parent_pk = next(iter(parent_schema.table.primary_key)).key
+                joins.append((
+                    alias,
+                    column_on(parent_target, parent_schema, parent_pk)
+                    == alias.c[child.fk_field],
+                ))
                 o2m_edges += 1
             elif related is not None:
                 next_schema = derive_schema(related.model_class)
                 alias = next_schema.table.alias()
-                ref_pk = next(iter(next_schema.table.primary_key)).name
-                from_clause = from_clause.outerjoin(
-                    alias, parent_table.c[related.fk_field] == alias.c[ref_pk]
-                )
+                ref_pk = next(iter(next_schema.table.primary_key)).key
+                joins.append((
+                    alias,
+                    column_on(parent_target, parent_schema, related.fk_field)
+                    == alias.c[ref_pk],
+                ))
             else:
                 raise QueryError(
                     "INVALID_FILTER_FIELD",
@@ -161,7 +175,7 @@ def _build_join_tree(
                 )
             alias_cache[prefix] = (alias, next_schema)
 
-    return from_clause, alias_cache, o2m_edges
+    return joins, alias_cache, o2m_edges
 
 
 def _compile_groupby_column(
@@ -242,14 +256,14 @@ def _resolve_agg_column(
                 "INVALID_FILTER_FIELD",
                 f"No field '{leaf}' on relation path '{'.'.join(prefix)}'",
             )
-        return table.c[leaf]
+        return column_on(table, leaf_schema, leaf)
     else:
         if field_path not in schema.columns:
             raise QueryError(
                 "INVALID_FILTER_FIELD",
                 f"No field '{field_path}' on {schema.model_class.__name__}",
             )
-        return schema.table.c[field_path]
+        return column_on(schema.model_class, schema, field_path)
 
 
 def _validate_numeric_col(field_path: str, col: ColumnElement) -> None:

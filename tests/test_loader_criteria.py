@@ -94,3 +94,40 @@ def test_rule_applies_to_list_and_count(session, engine, rules):
     assert engine.count(session) == 1
     assert engine.count(session, domain=[["status", "=", "DRAFT"]]) == 0
 
+
+# ── Point 2: read_group is ORM-enabled ──────────────────────────────────
+
+
+def test_rule_applies_to_read_group(session, engine, rules):
+    rules[Order] = INDIA_ORDERS
+    groups, total = engine.read_group(
+        session, groupby=["status"], aggregates=["__count", "total:sum"]
+    )
+    assert total == 1
+    assert groups[0]["status"] == "CONFIRMED"
+    assert groups[0]["__count"] == 1
+    assert groups[0]["total__sum"] == 100
+
+
+def test_rule_applies_to_read_group_with_relational_groupby(session, engine, rules):
+    rules[Order] = [["status", "=", "CONFIRMED"]]
+    groups, _ = engine.read_group(
+        session, groupby=["customer.city.name"], aggregates=["__count"]
+    )
+    assert {g["customer__city__name"]: g["__count"] for g in groups} == {
+        "Mumbai": 1,
+        "New York": 1,
+    }
+
+
+def test_rule_applies_to_read_group_over_o2m_child(session, engine, rules):
+    rules[Order] = INDIA_ORDERS
+    groups, _ = engine.read_group(
+        session, groupby=["status"], aggregates=["lines.quantity:sum"]
+    )
+    assert [(g["status"], g["lines__quantity__sum"]) for g in groups] == [("CONFIRMED", 5)]
+
+
+def test_read_group_unchanged_without_rules(session, engine):
+    groups, _ = engine.read_group(session, groupby=["status"], aggregates=["__count"])
+    assert {g["status"]: g["__count"] for g in groups} == {"CONFIRMED": 2, "DRAFT": 1}
