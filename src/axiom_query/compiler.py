@@ -6,7 +6,8 @@ from datetime import date, datetime
 from typing import Any, Callable
 
 from sqlalchemy import Date, DateTime, and_, exists, not_, or_, select, true, false
-from sqlalchemy.sql.expression import ColumnElement
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.sql.expression import ColumnElement, FromClause
 
 from axiom_query.ast import And, Bool, Condition, Not, Or, QuerySpec
 from axiom_query.operators import Op
@@ -58,45 +59,43 @@ def _make_alias_resolver(alias_map: dict[str, ColumnElement]) -> SAResolver:
     return resolve
 
 
-def _resolve_column(schema: ModelSchema, field_path: str) -> ColumnElement:
-    """Resolve a field path to its SA column, or raise QueryError."""
+def column_on(target: Any, schema: ModelSchema, name: str) -> ColumnElement:
+    """Return column ``name`` of ``schema`` as it appears on ``target``.
+
+    ``target`` is either a mapped class / ``aliased()`` entity, resolved via the
+    mapped attribute so ORM adaptation (aliases, joined eager loads,
+    ``with_loader_criteria``) can retarget it, or a Core table alias used
+    inside a relational EXISTS hop.
+    """
+    if isinstance(target, FromClause):
+        return target.c[name]
+    prop = sa_inspect(schema.model_class).get_property_by_column(schema.columns[name])
+    return getattr(target, prop.key)
+
+
+def _resolve_column(schema: ModelSchema, target: Any, field_name: str) -> ColumnElement:
+    """Resolve a scalar field on ``target`` to its SA column, or raise QueryError."""
     from axiom_query.errors import QueryError
 
-    if "." in field_path:
-        child_name, field_name = field_path.split(".", 1)
-        child = schema.children.get(child_name)
-        if child is None:
-            raise QueryError(
-                "INVALID_FILTER_FIELD",
-                f"No child relation '{child_name}' on {schema.model_class.__name__}. "
-                f"Available: {', '.join(schema.children.keys()) or 'none'}",
-            )
-        col = child.columns.get(field_name)
-        if col is None:
-            raise QueryError(
-                "INVALID_FILTER_FIELD",
-                f"No field '{field_name}' on child '{child_name}'",
-            )
-        return child.table.c[field_name]
-    else:
-        col = schema.columns.get(field_path)
-        if col is None:
-            raise QueryError(
-                "INVALID_FILTER_FIELD",
-                f"No field '{field_path}' on {schema.model_class.__name__}. "
-                f"Available: {', '.join(schema.columns.keys())}",
-            )
-        return schema.table.c[field_path]
+    if field_name not in schema.columns:
+        raise QueryError(
+            "INVALID_FILTER_FIELD",
+            f"No field '{field_name}' on {schema.model_class.__name__}. "
+            f"Available: {', '.join(schema.columns.keys())}",
+        )
+    return column_on(target, schema, field_name)
 
 
 def _resolve_path_condition(
-    schema: ModelSchema, segments: list[str], op: Op, val: Any
+    schema: ModelSchema, target: Any, segments: list[str], op: Op, val: Any
 ) -> ColumnElement:
     """Resolve a (possibly multi-hop) relational path into a WHERE condition.
 
     The leaf segment is a scalar column; every preceding segment is an O2M or
     M2O relation, each wrapped in a correlated EXISTS so arbitrary depth and
-    mixed O2M/M2O chains are supported.
+    mixed O2M/M2O chains are supported. Each hop selects from a fresh table
+    alias, so it never auto-correlates against the same table in an outer
+    query and is never retargeted by an outer ORM alias adapter.
     """
     from axiom_query.errors import QueryError
 
@@ -104,28 +103,34 @@ def _resolve_path_condition(
 
     # Leaf: scalar column on the current model
     if not rest:
-        return _apply_operator(_resolve_column(schema, head), op, val)
+        return _apply_operator(_resolve_column(schema, target, head), op, val)
 
     # O2M: FK is on the child table; correlate child rows to the parent PK
     child = schema.children.get(head)
     if child is not None:
-        inner = _resolve_path_condition(derive_schema(child.model_class), rest, op, val)
-        parent_pk = next(iter(schema.table.primary_key))
+        child_alias = child.table.alias()
+        inner = _resolve_path_condition(
+            derive_schema(child.model_class), child_alias, rest, op, val
+        )
+        parent_pk = column_on(target, schema, next(iter(schema.table.primary_key)).key)
         return exists(
             select(1)
-            .select_from(child.table)
-            .where(and_(child.table.c[child.fk_field] == parent_pk, inner))
+            .select_from(child_alias)
+            .where(and_(child_alias.c[child.fk_field] == parent_pk, inner))
         )
 
     # M2O: FK is on the current table; correlate the referenced PK to the local FK
     related = schema.related.get(head)
     if related is not None:
-        inner = _resolve_path_condition(derive_schema(related.model_class), rest, op, val)
-        ref_pk = next(iter(related.table.primary_key))
+        ref_alias = related.table.alias()
+        inner = _resolve_path_condition(
+            derive_schema(related.model_class), ref_alias, rest, op, val
+        )
+        ref_pk = ref_alias.c[next(iter(related.table.primary_key)).key]
         return exists(
             select(1)
-            .select_from(related.table)
-            .where(and_(ref_pk == schema.table.c[related.fk_field], inner))
+            .select_from(ref_alias)
+            .where(and_(ref_pk == column_on(target, schema, related.fk_field), inner))
         )
 
     all_relations = list(schema.children.keys()) + list(schema.related.keys())
@@ -136,18 +141,29 @@ def _resolve_path_condition(
     )
 
 
-def _make_table_resolver(schema: ModelSchema) -> SAResolver:
-    """Create a WHERE resolver that resolves field paths against table columns."""
+def _make_entity_resolver(schema: ModelSchema, entity: Any) -> SAResolver:
+    """Create a WHERE resolver that resolves field paths against a mapped entity."""
 
     def resolve(fp: str, op: Op, val: Any) -> ColumnElement:
-        return _resolve_path_condition(schema, fp.split("."), op, val)
+        return _resolve_path_condition(schema, entity, fp.split("."), op, val)
 
     return resolve
 
 
-def compile_domain(spec: QuerySpec, schema: ModelSchema) -> ColumnElement:
-    """Compile a QuerySpec AST into a SQLAlchemy WHERE clause."""
-    resolver = _make_table_resolver(schema)
+def compile_domain(
+    spec: QuerySpec, schema: ModelSchema, entity: Any = None
+) -> ColumnElement:
+    """Compile a QuerySpec AST into a SQLAlchemy WHERE clause.
+
+    Columns are resolved through ``entity``: the mapped class by default, or
+    an ``aliased()`` entity to filter that alias. Because the clause is built
+    from mapped attributes, SQLAlchemy can adapt it wherever the entity is
+    aliased, e.g. when passed to ``with_loader_criteria`` and rendered inside a
+    ``joinedload``.
+    """
+    resolver = _make_entity_resolver(
+        schema, schema.model_class if entity is None else entity
+    )
     return _walk_ast(spec, resolver)
 
 
