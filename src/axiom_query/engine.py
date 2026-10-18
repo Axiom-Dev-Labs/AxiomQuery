@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from axiom_query.aggregation import Pagination, ReadGroupQuery
 from axiom_query.aggregation_parser import parse_read_group
-from axiom_query.compiler import compile_domain
+from axiom_query.compiler import column_on, compile_domain
 from axiom_query.compiler_aggregate import build_group_domain, compile_read_group
 from axiom_query.parser import parse_domain
 from axiom_query.schema import ModelSchema, derive_schema
@@ -276,7 +276,7 @@ class QueryEngine:
                 continue
 
             if field in self._schema.columns:
-                col = self._schema.table.c[field]
+                col = column_on(self._model, self._schema, field)
                 if direction == "desc":
                     stmt = stmt.order_by(col.desc())
                 else:
